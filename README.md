@@ -1,6 +1,8 @@
 RadiK: Scalable Radix Top-K Selection on GPUs
 ======
 
+[![DOI](https://zenodo.org/badge/725482731.svg)](https://zenodo.org/doi/10.5281/zenodo.10224741)
+
 RadiK is a highly optimized GPU-parallel radix top-k selection that is scalable with *k*, input length, and batch size.
 It is also robust against skewed input distributions.
 
