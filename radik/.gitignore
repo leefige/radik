@@ -1,0 +1,8 @@
+obj/
+lib/
+
+*.a
+*.o
+*.out
+*.dbg
+*.log
