@@ -7,7 +7,7 @@ import numpy as np
 
 import libs.common as common
 from libs.algos import ALGOS, Algo
-from libs.radik import Distribution
+from libs.common import Distribution
 
 BATCH = 1
 K = 512
@@ -21,12 +21,10 @@ def test_case(N: int) -> List[float]:
     res = []
     # U[0.6, 0.7], w/o scaling
     res.append(fn(Algo.RADIK)(BATCH, N, K, distribution=Distribution.U_0_6_0_7, scaling=False))
-    # U[0.6, 0.7], w/ scaling
-    res.append(fn(Algo.RADIK)(BATCH, N, K, distribution=Distribution.U_0_6_0_7, scaling=True))
     # U[128.6, 128.7], w/o scaling
     res.append(fn(Algo.RADIK)(BATCH, N, K, distribution=Distribution.U_128_6_128_7, scaling=False))
-    # U[128.6, 128.7], w/ scaling
-    res.append(fn(Algo.RADIK)(BATCH, N, K, distribution=Distribution.U_128_6_128_7, scaling=True))
+    # zipf(N, 1.1), w/o scaling
+    res.append(fn(Algo.RADIK)(BATCH, N, K, distribution=Distribution.ZIPF_1_1, scaling=False))
     return res
 
 
@@ -39,7 +37,7 @@ def main():
     res = res.T
     print("Done")
 
-    filename = os.path.join(common.PLOT_DIR, "3-skewed.csv")
+    filename = os.path.join(common.PLOT_DIR, "ex3-zipf-a.csv")
     with open(filename, 'w', encoding='utf-8') as fout:
         fieldnames = [f"2^{i}" for i in range(21, 30)]
         writer = csv.DictWriter(fout, fieldnames=fieldnames)

@@ -1,14 +1,8 @@
 import os
 import re
-from enum import IntEnum
 
 import libs.common as common
-
-
-class Distribution(IntEnum):
-    U_0_1 = 0
-    U_0_6_0_7 = 1
-    U_128_6_128_7 = 2
+from libs.common import Distribution
 
 
 def run_radik(BATCH: int, N: int, K: int,
@@ -16,15 +10,17 @@ def run_radik(BATCH: int, N: int, K: int,
               rand_task_len: bool = False,
               distribution: Distribution = Distribution.U_0_1,
               batched: bool = True,
-              padding: bool = True) -> float:
+              padding: bool = True,
+              sorting: bool = True) -> float:
     arg_scaling = 1 if scaling else 0
     arg_rand_task_len = 1 if rand_task_len else 0
     arg_distribution = distribution.value
     arg_batched = 1 if batched else 0
     arg_padding = 1 if padding else 0
+    arg_sorting = 1 if sorting else 0
 
     cmd = f"{common.RADIK_BIN} {BATCH} {N} {K} {arg_rand_task_len} "\
-          f"{arg_scaling} {arg_distribution} {arg_batched} {arg_padding}"
+          f"{arg_scaling} {arg_distribution} {arg_batched} {arg_padding} {arg_sorting}"
     elapsed: float = None
 
     with os.popen(cmd, 'r') as fout:

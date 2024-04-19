@@ -3,7 +3,9 @@
 #include <chrono>
 #include <algorithm>
 #include <iostream>
+#include <thread>
 #include "../PQ/topK_PQ.h"
+#include "zipf.hpp"
 
 #include <curand.h>
 
@@ -11,27 +13,77 @@
 
 static constexpr bool LARGEST = 0;
 
+template <typename T>
+void generate_uniform_val(T *valIn, int len, T lowerBound, T upperBound) {
+    std::uniform_real_distribution<T> dis(lowerBound, upperBound);
+    std::default_random_engine generator;
+    generator.seed(1);
+    std::generate(valIn, valIn + len, [&]() { return dis(generator);});
+}
+
+template <typename T>
+void generate_zipf_val(T *valIn, int len, double skew, double scale = 1.0) {
+    std::default_random_engine generator;
+    generator.seed(1);
+    ZipfRejectionSampler<std::default_random_engine> zipf(generator, len, skew);
+    std::generate(valIn, valIn + len, [&]() { return static_cast<T>(zipf.getSample() * scale);});
+}
+
 template <typename IdxType, typename ValType>
 void profWarpSelect(const int BATCHSIZE,
                     const int N,
-                    const int K) {
+                    const int K,
+                    const int DISTRIBUTION_TYPE = 0) {
     // prepare data CPU
-    const int64_t TOTALLEN = BATCHSIZE * N;
+    std::vector<int> TASKLEN(BATCHSIZE, N);
+    const int64_t TOTALLEN = std::accumulate(TASKLEN.begin(), TASKLEN.end(), 0);
+    const int64_t MAXLEN = *std::max_element(TASKLEN.begin(), TASKLEN.end());
+    std::vector<int64_t> TASKOFFSET(BATCHSIZE + 1, 0);
+    for (int i = 0; i < BATCHSIZE; ++i) {
+        TASKOFFSET[i + 1] = TASKLEN[i] + TASKOFFSET[i];
+    }
 
     // prepare data GPU
     ValType *valIn_dev = 0;
     cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N);
 
-    // using U[0, 1]
-    curandGenerator_t gen;
-    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-    curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
-    curandGenerateUniform(gen, valIn_dev, TOTALLEN);
+    std::vector<ValType> valIn(TOTALLEN);
+    if (DISTRIBUTION_TYPE == 0) {
+        // using U[0, 1]
+        curandGenerator_t gen;
+        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+        curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
+        curandGenerateUniform(gen, valIn_dev, TOTALLEN);
 #ifdef CORRECTNESS_CHECK
-    std::vector<ValType> dataIn(BATCHSIZE * N);
-    cudaMemcpy(dataIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
+        cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
 #endif
-    curandDestroyGenerator(gen);
+        curandDestroyGenerator(gen);
+    } else if (DISTRIBUTION_TYPE == 1) {
+        // using U[0.6, 0.7]
+        generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 0.6, 0.7);
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 2) {
+        // using U[128.6, 128.7]
+        generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 128.6, 128.7);
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 3) {
+        std::vector<std::thread> thds;
+        // using Zipf(N, 1.1)
+        for (int i = 0; i < BATCHSIZE; i++) {
+            thds.emplace_back([&](int idx) {
+                generate_zipf_val<ValType>(valIn.data() + TASKOFFSET[idx], TASKLEN[idx], 1.1, 1.0 / TASKLEN[idx]);
+            }, i);
+        }
+        for (auto& t: thds) {
+            t.join();
+        }
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 4) {
+        // all zero
+        cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN);
+    } else {
+        throw std::runtime_error("Bad distributiion");
+    }
 
     // cudaMemcpy(valIn_dev, dataIn.data(), sizeof(ValType) * BATCHSIZE * N, cudaMemcpyHostToDevice);
     IdxType *idxIn_dev = 0;
@@ -78,24 +130,58 @@ void profWarpSelect(const int BATCHSIZE,
 template <typename IdxType, typename ValType>
 void profBlockSelect(const int BATCHSIZE,
                      const int N,
-                     const int K) {
+                     const int K,
+                     const int DISTRIBUTION_TYPE = 0) {
     // prepare data CPU
-    const int64_t TOTALLEN = BATCHSIZE * N;
+    std::vector<int> TASKLEN(BATCHSIZE, N);
+    const int64_t TOTALLEN = std::accumulate(TASKLEN.begin(), TASKLEN.end(), 0);
+    const int64_t MAXLEN = *std::max_element(TASKLEN.begin(), TASKLEN.end());
+    std::vector<int64_t> TASKOFFSET(BATCHSIZE + 1, 0);
+    for (int i = 0; i < BATCHSIZE; ++i) {
+        TASKOFFSET[i + 1] = TASKLEN[i] + TASKOFFSET[i];
+    }
 
     // prepare data GPU
     ValType *valIn_dev = 0;
     cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N);
 
-    // using U[0, 1]
-    curandGenerator_t gen;
-    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-    curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
-    curandGenerateUniform(gen, valIn_dev, TOTALLEN);
+    std::vector<ValType> valIn(TOTALLEN);
+    if (DISTRIBUTION_TYPE == 0) {
+        // using U[0, 1]
+        curandGenerator_t gen;
+        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+        curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
+        curandGenerateUniform(gen, valIn_dev, TOTALLEN);
 #ifdef CORRECTNESS_CHECK
-    std::vector<ValType> dataIn(BATCHSIZE * N);
-    cudaMemcpy(dataIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
+        cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
 #endif
-    curandDestroyGenerator(gen);
+        curandDestroyGenerator(gen);
+    } else if (DISTRIBUTION_TYPE == 1) {
+        // using U[0.6, 0.7]
+        generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 0.6, 0.7);
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 2) {
+        // using U[128.6, 128.7]
+        generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 128.6, 128.7);
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 3) {
+        std::vector<std::thread> thds;
+        // using Zipf(N, 1.1)
+        for (int i = 0; i < BATCHSIZE; i++) {
+            thds.emplace_back([&](int idx) {
+                generate_zipf_val<ValType>(valIn.data() + TASKOFFSET[idx], TASKLEN[idx], 1.1, 1.0 / TASKLEN[idx]);
+            }, i);
+        }
+        for (auto& t: thds) {
+            t.join();
+        }
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 4) {
+        // all zero
+        cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN);
+    } else {
+        throw std::runtime_error("Bad distributiion");
+    }
 
     IdxType *idxIn_dev = 0;
     ValType *valOut_dev = 0;
@@ -141,24 +227,58 @@ void profBlockSelect(const int BATCHSIZE,
 template<typename IdxType, typename ValType>
 void profGridSelect(const int BATCHSIZE,
                     const int N,
-                    const int K) {
+                    const int K,
+                    const int DISTRIBUTION_TYPE = 0) {
     // prepare data CPU
-    const int64_t TOTALLEN = BATCHSIZE * N;
+    std::vector<int> TASKLEN(BATCHSIZE, N);
+    const int64_t TOTALLEN = std::accumulate(TASKLEN.begin(), TASKLEN.end(), 0);
+    const int64_t MAXLEN = *std::max_element(TASKLEN.begin(), TASKLEN.end());
+    std::vector<int64_t> TASKOFFSET(BATCHSIZE + 1, 0);
+    for (int i = 0; i < BATCHSIZE; ++i) {
+        TASKOFFSET[i + 1] = TASKLEN[i] + TASKOFFSET[i];
+    }
 
     // prepare data GPU
     ValType *valIn_dev = 0;
     cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N);
 
-    // using U[0, 1]
-    curandGenerator_t gen;
-    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-    curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
-    curandGenerateUniform(gen, valIn_dev, TOTALLEN);
+    std::vector<ValType> valIn(TOTALLEN);
+    if (DISTRIBUTION_TYPE == 0) {
+        // using U[0, 1]
+        curandGenerator_t gen;
+        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+        curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
+        curandGenerateUniform(gen, valIn_dev, TOTALLEN);
 #ifdef CORRECTNESS_CHECK
-    std::vector<ValType> dataIn(BATCHSIZE * N);
-    cudaMemcpy(dataIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
+        cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
 #endif
-    curandDestroyGenerator(gen);
+        curandDestroyGenerator(gen);
+    } else if (DISTRIBUTION_TYPE == 1) {
+        // using U[0.6, 0.7]
+        generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 0.6, 0.7);
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 2) {
+        // using U[128.6, 128.7]
+        generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 128.6, 128.7);
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 3) {
+        std::vector<std::thread> thds;
+        // using Zipf(N, 1.1)
+        for (int i = 0; i < BATCHSIZE; i++) {
+            thds.emplace_back([&](int idx) {
+                generate_zipf_val<ValType>(valIn.data() + TASKOFFSET[idx], TASKLEN[idx], 1.1, 1.0 / TASKLEN[idx]);
+            }, i);
+        }
+        for (auto& t: thds) {
+            t.join();
+        }
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 4) {
+        // all zero
+        cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN);
+    } else {
+        throw std::runtime_error("Bad distributiion");
+    }
 
     IdxType *idxIn_dev = 0;
     ValType *valOut_dev = 0;
@@ -212,12 +332,16 @@ int main(int argc, char *argv[]) {
     int BATCHSIZE;
     int K;
     int N;
+    int DISTRIBUTION = 0;
 
     if (argc >= 5) {
         ALGO = atoi(argv[1]);
         BATCHSIZE = atoi(argv[2]);
         N = (1<<atoi(argv[3]));
         K = atoi(argv[4]);
+        if (argc >= 6) {
+            DISTRIBUTION = atoi(argv[5]);
+        }
     } else {
         printf("Please choose algorithm (0: warp select, 1: block select, 2: grid select):\n");
         std::cin>>ALGO;
@@ -232,13 +356,13 @@ int main(int argc, char *argv[]) {
 
     switch (ALGO) {
     case 0:
-        profWarpSelect<int32_t, float>(BATCHSIZE, N, K);
+        profWarpSelect<int32_t, float>(BATCHSIZE, N, K, DISTRIBUTION);
         break;
     case 1:
-        profBlockSelect<int32_t, float>(BATCHSIZE, N, K);
+        profBlockSelect<int32_t, float>(BATCHSIZE, N, K, DISTRIBUTION);
         break;
     case 2:
-        profGridSelect<int32_t, float>(BATCHSIZE, N, K);
+        profGridSelect<int32_t, float>(BATCHSIZE, N, K, DISTRIBUTION);
         break;
     default:
         printf("Bad algorithm type\n");

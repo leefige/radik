@@ -16,10 +16,10 @@ plt.rcParams.update({'font.size': 19})
 
 npyname = os.path.join(common.PLOT_DIR, "1-simple-topk.npy")
 data: np.ndarray = np.load(npyname, 'r')
-data = data[1:]
+data = data[(range(0, len(data), 2))]
 rows, cols, algos = data.shape
 
-Ns = [f"2^{{{n:d}}}" for n in range(22, 30)]
+Ns = [f"2^{{{n:d}}}" for n in range(21, 30, 2)]
 Ks = [f"{2 ** k}" for k in range(4, 13)]
 Algos = ["RadiK", "bitonic", "PQ-grid", "PQ-block"]
 
@@ -60,7 +60,7 @@ def draw_part(data, Ns, Ks, name):
 
     plt.cla()
     fig, ax = plt.subplots()
-    fig.set_figwidth(3 * len(data))
+    fig.set_figwidth(5 * len(data))
     fig.set_figheight(6)
     ax.yaxis.get_ticklocs(minor=True)
     # Initialize minor ticks
@@ -78,7 +78,7 @@ def draw_part(data, Ns, Ks, name):
     plt.ylabel("latency (ms), logarithmic scale")
 
     n = len(Algos)
-    width = 1
+    width = 10
     factor = width * n + width
 
     plt.yscale('log')
