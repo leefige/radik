@@ -66,7 +66,8 @@ void topKRadixSelectL(const ValType *valIn,
                       const int *taskLen,
                       const int &taskNum,
                       const int &K,
-                      cudaStream_t stream) {
+                      cudaStream_t stream,
+                      bool needSorting = true) {
     using CompT = typename radix_topk::ComputeT<ValType>::type;
 
     static_assert(!WITHPACKING || (WITHPACKING && sizeof(ValType) <= 16),
@@ -258,6 +259,10 @@ do {                                                                            
 #undef RADIX_TOPK_CALL_FILTER
     KERNEL_CHECK();
     // KERNEL_CHECK_SYNC(stream);
+
+    if (!needSorting) {
+        return;
+    }
 
 #define RADIX_TOPK_CALL_BITONIC_SORT(LENGTH, BLOCK)                             \
 do {                                                                            \

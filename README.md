@@ -1,38 +1,42 @@
-RadiK: Scalable Radix Top-K Selection on GPUs
+RadiK: Scalable and Optimized GPU-Parallel Radix Top-K Selection
 ======
 
 [![DOI](https://zenodo.org/badge/725482731.svg)](https://zenodo.org/doi/10.5281/zenodo.10224741)
 
 RadiK is a highly optimized GPU-parallel radix top-k selection that is scalable with *k*, input length, and batch size.
-It is also robust against skewed input distributions.
+It is also robust against adversarial input distributions.
 
 This artifact provides a docker container image to reproduce evaluations in our paper.
 
+For the source codes of RadiK, please refer to the [`radik/RadixSelect`](radik/RadixSelect) folder.
+
 # Table of Contents
 
-- [RadiK: Scalable Radix Top-K Selection on GPUs](#radik-scalable-radix-top-k-selection-on-gpus)
+- [RadiK: Scalable and Optimized GPU-Parallel Radix Top-K Selection](#radik-scalable-and-optimized-gpu-parallel-radix-top-k-selection)
 - [Table of Contents](#table-of-contents)
 - [Getting Started Guide](#getting-started-guide)
-	- [Platform](#platform)
-	- [Set `SM_VERSION` (IMPORTANT)](#set-sm_version-important)
-	- [`runme.sh`](#runmesh)
-	- [Run without GNU `make`](#run-without-gnu-make)
-		- [Build the Image](#build-the-image)
-		- [Run a Fast Test](#run-a-fast-test)
+  - [Platform](#platform)
+  - [Set `SM_VERSION` (IMPORTANT)](#set-sm_version-important)
+  - [`runme.sh`](#runmesh)
+  - [Run without GNU `make`](#run-without-gnu-make)
+    - [Build the Image](#build-the-image)
+    - [Run a Fast Test](#run-a-fast-test)
 - [Step-by-Step Instructions](#step-by-step-instructions)
-	- [`runme_full.sh`](#runme_fullsh)
-	- [Run Evaluations Manually](#run-evaluations-manually)
-		- [Start and Log in the Container](#start-and-log-in-the-container)
-		- [Run Evaluations and Plot Figures](#run-evaluations-and-plot-figures)
+  - [`runme_full.sh`](#runme_fullsh)
+  - [Run Evaluations Manually](#run-evaluations-manually)
+    - [Start and Log in the Container](#start-and-log-in-the-container)
+    - [Run Evaluations and Plot Figures](#run-evaluations-and-plot-figures)
 - [Additional Information](#additional-information)
-	- [Compatibility and JIT Compilation](#compatibility-and-jit-compilation)
-	- [Project Structure](#project-structure)
-		- [RadiK and Grid Select](#radik-and-grid-select)
-		- [Bitonic Select (Externel)](#bitonic-select-externel)
-		- [Block Select (Extracted from Faiss)](#block-select-extracted-from-faiss)
-		- [Image Building](#image-building)
-		- [Evaluations](#evaluations)
-	- [References](#references)
+  - [Compatibility and JIT Compilation](#compatibility-and-jit-compilation)
+  - [Project Structure](#project-structure)
+    - [RadiK and Grid Select](#radik-and-grid-select)
+    - [Bitonic Select (Externel)](#bitonic-select-externel)
+    - [Block Select (Extracted from Faiss)](#block-select-extracted-from-faiss)
+    - [Image Building](#image-building)
+    - [Evaluations](#evaluations)
+  - [References](#references)
+- [Citation](#citation)
+- [License](#license)
 
 # Getting Started Guide
 
@@ -68,7 +72,7 @@ Before running, please check the Streaming Multiprocessor (SM) version, also kno
 First, check the name(s) of your GPU(s):
 
 ```sh
-$ nvidia-smi --query-gpu=name --format=csv,noheader
+nvidia-smi --query-gpu=name --format=csv,noheader
 ```
 
 If you have multiple GPUs and their names are different, by default we will use the GPU 0 (the first GPU), and the following steps only apply to GPU 0.
@@ -76,7 +80,7 @@ With the GPU name, please check the SM version (Compute Capability) from the web
 For example, the Compute Capability of NVIDIA T4 is 7.5, and we set the envariable `SM_VERSION` to 75:
 
 ```sh
-$ export SM_VERSION=75
+export SM_VERSION=75
 ```
 
 Here is a table for some common GPUs:
@@ -102,7 +106,7 @@ The `runme.sh` script includes building the image and running a basic test.
 To run this script, GNU `make` is required.
 
 ```sh
-$ ./runme.sh
+./runme.sh
 ```
 
 This will build the image, run a fast test corresponding to Section 5.3.2, and plot Figure 11 (a). Building takes about 20 minutes, depending on your network bandwidth and the number of CPU cores.
@@ -123,14 +127,14 @@ The working directory should be this directory.
 ### Build the Image
 
 ```sh
-$ docker build --build-arg SM_VERSION=$SM_VERSION -t radik .
+docker build --build-arg SM_VERSION=$SM_VERSION -t radik .
 ```
 
 Depending on your platform, you may need privilege to run Docker commands.
 If the command above fails due to permission issue, try:
 
 ```sh
-$ sudo docker build --build-arg SM_VERSION=$SM_VERSION -t radik .
+sudo docker build --build-arg SM_VERSION=$SM_VERSION -t radik .
 ```
 
 This also applies to other Docker commands.
@@ -138,10 +142,10 @@ This also applies to other Docker commands.
 ### Run a Fast Test
 
 ```sh
-$ docker run --name $USER-radik --rm --gpus '"device=0"' \
+docker run --name $USER-radik --rm --gpus '"device=0"' \
     --mount type=bind,src=`pwd`/plot,dst=/radik/plot radik \
     eval/2-batched-a.py
-$ docker run --name $USER-radik --rm --gpus '"device=0"' \
+docker run --name $USER-radik --rm --gpus '"device=0"' \
     --mount type=bind,src=`pwd`/plot,dst=/radik/plot radik \
     eval/plot-2-batched-a.py
 ```
@@ -150,18 +154,18 @@ You can also run the test in an interactive manner.
 First, start and log in the container.
 
 ```sh
-$ docker run -it --name $USER-radik --rm --gpus '"device=0"' \
+docker run -it --name $USER-radik --rm --gpus '"device=0"' \
     --mount type=bind,src=`pwd`/plot,dst=/radik/plot radik
 ```
 
 Then, run the following commands in the container.
 
 ```sh
-$ cd eval
+cd eval
 # run the evaluation
-$ ./2-batched-a.py
+./2-batched-a.py
 # plot the results
-$ ./plot-2-batched-a.py
+./plot-2-batched-a.py
 ```
 
 # Step-by-Step Instructions
@@ -174,14 +178,19 @@ The correspondence between the output figures and the figures in our paper is sh
 
 | Output Figure Name        | Figure in Paper |
 | ------------------------- | --------------- |
-| `1-single-query-all.png`  | Figure 9        |
-| `1-single-query-last.png` | Figure 10       |
-| `2-batched-a.png`         | Figure 11 (a)   |
-| `2-batched-b.png`         | Figure 11 (b)   |
-| `2-batched-c.png`         | Figure 11 (c)   |
-| `4-ablation.png`          | Figure 12       |
-| `3-skewed-a.png`          | Figure 13 (a)   |
-| `3-skewed-b.png`          | Figure 13 (b)   |
+| `1-single-query-all.png`  | Figure 7        |
+| `1-single-query-last.png` | Figure 8        |
+| `2-batched-a.png`         | Figure 9 (a)    |
+| `2-batched-b.png`         | Figure 9 (b)    |
+| `2-batched-c.png`         | Figure 9 (c)    |
+| `4-ablation.png`          | Figure 10       |
+| `ex1-median.png`          | Figure 11       |
+| `3-skewed-a.png`          | Figure 12 (a)   |
+| `3-skewed-b.png`          | Figure 12 (b)   |
+| `ex2-skewed-a.png`        | Figure 12 (c)   |
+| `ex2-skewed-b.png`        | Figure 12 (d)   |
+| `ex3-zipf-a.png`          | Figure 13 (a)   |
+| `ex3-zipf-b.png`          | Figure 13 (b)   |
 
 ## Run Evaluations Manually
 
@@ -199,7 +208,7 @@ make run
 Alternatively, run Docker commands directly if `make` is unavailable.
 
 ```sh
-$ docker run -it --name $USER-radik --rm --gpus '"device=0"' \
+docker run -it --name $USER-radik --rm --gpus '"device=0"' \
     --mount type=bind,src=`pwd`/plot,dst=/radik/plot radik
 ```
 
@@ -223,59 +232,80 @@ For the mapping between the output figures and the figures in the paper, please 
 
 ```sh
 # go into eval folder
-$cd eval
+cd eval
 ```
 
-1. Section 5.3.1 (Figure 9 and 10)
+1. Section 5.3.1 (Figure 7 and 8)
 
     ```sh
     # run tests
-    $ ./1-simple-topk.py
-    # plot Figure 9
-    $ ./plot-1-single-query-all.py
+    ./1-simple-topk.py
+    # plot Figure 7
+    ./plot-1-single-query-all.py
+    # plot Figure 8
+    ./plot-1-single-query-part.py
+    ```
+
+2. Section 5.3.2 (Figure 9)
+
+    ```sh
+    # run tests
+    ./2-batched-a.py
+    # plot Figure 9 (a)
+    ./plot-2-batched-a.py
+    ```
+
+    ```sh
+    # run tests
+    ./2-batched-b.py
+    # plot Figure 9 (b)
+    ./plot-2-batched-b.py
+    ```
+
+    ```sh
+    # run tests
+    ./2-batched-c.py
+    # plot Figure 9 (c)
+    ./plot-2-batched-c.py
+    ```
+
+3. Section 5.3.3 (Figure 10)
+
+    ```sh
+    # run tests
+    ./4-ablation.py
     # plot Figure 10
-    $ ./plot-1-single-query-part.py
+    ./plot-4-ablation.py
     ```
 
-2. Section 5.3.2 (Figure 11)
+4. Section 5.4 (Figure 11)
 
     ```sh
     # run tests
-    $ ./2-batched-a.py
-    # plot Figure 11 (a)
-    $ ./plot-2-batched-a.py
+    ./ex1-median.py
+    # plot Figure 11
+    ./plot-ex1-median-fig.py
     ```
+
+5. Section 5.5 (Figure 12 and 13)
 
     ```sh
     # run tests
-    $ ./2-batched-b.py
-    # plot Figure 11 (b)
-    $ ./plot-2-batched-b.py
-    ```
+    ./3-skewed.py
+    # plot Figure 12 (a) and (b)
+    ./plot-3-skewed.py
 
-    ```sh
-    # run tests
-    $ ./2-batched-c.py
-    # plot Figure 11 (c)
-    $ ./plot-2-batched-c.py
-    ```
+    ./ex2-skewed.py
+    # plot Figure 12 (c) and (d)
+    ./plot-ex2-skewed-fig.py
 
-3. Section 5.3.3 (Figure 12)
+    ./ex3-zipf-a.py
+    # plot Figure 13 (a)
+    ./plot-ex3-zipf-fig-a.py
 
-    ```sh
-    # run tests
-    $ ./4-ablation.py
-    # plot Figure 12
-    $ ./plot-4-ablation.py
-    ```
-
-4. Section 5.4 (Figure 13)
-
-    ```sh
-    # run tests
-    $ ./3-skewed.py
-    # plot Figure 13 (a) and (b)
-    $ ./plot-3-skewed.py
+    ./ex3-zipf-b.py
+    # plot Figure 13 (b)
+    ./plot-ex3-zipf-fig-b.py
     ```
 
 # Additional Information
@@ -348,3 +378,20 @@ runme_full.sh # script for full evaluation
 [2] Anil Shanbhag, Holger Pirk, and Samuel Madden. 2018. Efficient Top-K Query Processing on Massively Parallel Hardware. In Proceedings of the 2018 International Conference on Management of Data (SIGMOD '18). Association for Computing Machinery, New York, NY, USA, 1557–1570. https://doi.org/10.1145/3183713.3183735
 
 [3] Christina Zhang and Yong Wang. 2020. Accelerating top-k computation on GPU. NVIDIA. https://live.nvidia.cn/gtc-od/attachments/CNS20315.pdf.
+
+# Citation
+
+If you find our work helpful, feel free to cite our [paper](https://doi.org/10.1145/3650200.3656596).
+
+```bibtex
+@inproceedings{radik2024,
+  title = {RadiK: Scalable and Optimized GPU-Parallel Radix Top-K Selection},
+  author = {Li, Yifei and Zhou, Bole and Zhang, Jiejing and Wei, Xuechao and Li, Yinghan and Chen, Yingda},
+  booktitle = {Proceedings of the 38th ACM International Conference on Supercomputing},
+  year = {2024}
+}
+```
+
+# License
+
+This project, including the RadiK source codes in the [`radik/RadixSelect`](radik/RadixSelect) folder, is licensed under the [MIT license](LICENSE).

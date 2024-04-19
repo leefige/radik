@@ -6,8 +6,10 @@
 #include <iostream>
 #include <cstdint>
 #include <numeric>
+#include <thread>
 
 #include "../RadixSelect/topk_radixselect.h"
+#include "zipf.hpp"
 
 // #define CORRECTNESS_CHECK
 
@@ -43,12 +45,21 @@ void generate_uniform_val(T *valIn, int len, T lowerBound, T upperBound) {
     std::generate(valIn, valIn + len, [&]() { return dis(generator);});
 }
 
+template <typename T>
+void generate_zipf_val(T *valIn, int len, double skew, double scale = 1.0) {
+    std::default_random_engine generator;
+    generator.seed(1);
+    ZipfRejectionSampler<std::default_random_engine> zipf(generator, len, skew);
+    std::generate(valIn, valIn + len, [&]() { return static_cast<T>(zipf.getSample() * scale);});
+}
+
 template <bool BATCHED, bool PADDING, bool WITHSCALE, typename IdxType, typename ValType>
 void profRadixSelectL(const int BATCHSIZE,
                       const int N,
                       const int K,
                       const int RANDOM_TASK,
-                      const int DISTRIBUTION_TYPE = 0) {
+                      const int DISTRIBUTION_TYPE = 0,
+                      const bool SORTING = true) {
     // prepare data CPU
     std::vector<int> TASKLEN(BATCHSIZE, N);
     if (RANDOM_TASK) {
@@ -88,10 +99,27 @@ void profRadixSelectL(const int BATCHSIZE,
         // using U[0.6, 0.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 0.6, 0.7);
         cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
-    } else {
+    } else if (DISTRIBUTION_TYPE == 2) {
         // using U[128.6, 128.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 128.6, 128.7);
         cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 3) {
+        std::vector<std::thread> thds;
+        // using Zipf(N, 1.1)
+        for (int i = 0; i < BATCHSIZE; i++) {
+            thds.emplace_back([&](int idx) {
+                generate_zipf_val<ValType>(valIn.data() + TASKOFFSET[idx], TASKLEN[idx], 1.1, 1.0 / TASKLEN[idx]);
+            }, i);
+        }
+        for (auto& t: thds) {
+            t.join();
+        }
+        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+    } else if (DISTRIBUTION_TYPE == 4) {
+        // all zero
+        cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN);
+    } else {
+        throw std::runtime_error("Bad distributiion");
     }
 
     IdxType *idxIn_dev = 0;
@@ -127,7 +155,8 @@ void profRadixSelectL(const int BATCHSIZE,
             TASKLEN.data(),
             BATCHSIZE,
             K,
-            stream0);
+            stream0,
+            SORTING);
         cudaEventRecord(end, stream0);
         cudaEventSynchronize(end);
         cudaEventElapsedTime(&time, start, end);
@@ -144,7 +173,8 @@ void profRadixSelectL(const int BATCHSIZE,
                 TASKLEN.data() + i,
                 1,
                 K,
-                stream0);
+                stream0,
+                SORTING);
         }
         cudaEventRecord(end, stream0);
         cudaEventSynchronize(end);
@@ -200,6 +230,7 @@ int main(int argc, char *argv[]) {
     int DISTRIBUTION = 0;
     int USING_BATCH = 1;
     int USING_PADDING = 1;
+    int USING_SORTING = 1;
 
     if (argc >= 6) {
         BATCHSIZE = atoi(argv[1]);
@@ -215,6 +246,9 @@ int main(int argc, char *argv[]) {
         }
         if (argc >= 9) {
             USING_PADDING = atoi(argv[8]);
+        }
+        if (argc >= 10) {
+            USING_SORTING = atoi(argv[9]);
         }
     } else {
         printf("Please enter BATCHSIZE:\n");
@@ -233,22 +267,22 @@ int main(int argc, char *argv[]) {
     if (USING_PADDING == 0) {
         // just use batched query in ablation study
         if (SCALING == 0) {
-                profRadixSelectL<true, false, 0, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION);
+                profRadixSelectL<true, false, 0, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION, USING_SORTING);
             } else {
-                profRadixSelectL<true, false, 1, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION);
+                profRadixSelectL<true, false, 1, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION, USING_SORTING);
             }
     } else {
         if (USING_BATCH == 1) {
             if (SCALING == 0) {
-                profRadixSelectL<true, true, 0, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION);
+                profRadixSelectL<true, true, 0, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION, USING_SORTING);
             } else {
-                profRadixSelectL<true, true, 1, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION);
+                profRadixSelectL<true, true, 1, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION, USING_SORTING);
             }
         } else {
             if (SCALING == 0) {
-                profRadixSelectL<false, true, 0, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION);
+                profRadixSelectL<false, true, 0, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION, USING_SORTING);
             } else {
-                profRadixSelectL<false, true, 1, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION);
+                profRadixSelectL<false, true, 1, int32_t, float>(BATCHSIZE, N, K, RANDOM_TASK, DISTRIBUTION, USING_SORTING);
             }
         }
     }

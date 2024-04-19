@@ -10,9 +10,10 @@ import libs.common as common
 
 plt.rcParams.update({'font.size': 19})
 
+
 data = []
 
-with open(os.path.join(common.PLOT_DIR, "3-skewed.csv"), 'r', encoding='utf-8') as fin:
+with open(os.path.join(common.PLOT_DIR, "ex2-skewed.csv"), 'r', encoding='utf-8') as fin:
     reader = csv.reader(fin)
     next(reader, None)
     for line in reader:
@@ -20,8 +21,6 @@ with open(os.path.join(common.PLOT_DIR, "3-skewed.csv"), 'r', encoding='utf-8') 
         data.append(line)
 
 data = np.array(data)
-
-ylim = data.max() * 1.1
 
 x = [f"$2^{{{i:d}}}$" for i in range(21, 30)]
 
@@ -44,19 +43,21 @@ def draw(da, s, label):
     # plt.title(label)
     plt.xlabel("input length")
     plt.ylabel("latency (ms)")
-    plt.ylim(0, ylim)
-    plt.plot(x, da[1], marker='s', label='with scaling')
-    plt.plot(x, da[0], marker='v', linestyle='dashed', label='without scaling')
+    # plt.ylim(0, ylim)
+    plt.plot(x, da[1], marker='s', label='ours (scaling)')
+    plt.plot(x, da[0], marker='v', linestyle='dashed', label='ours (no scaling)')
+    plt.plot(x, da[2], marker='v', linestyle=':', label='PQ-block')
+    plt.plot(x, da[3], marker='v', linestyle='-.', label='PQ-grid')
     plt.legend()
     plt.tight_layout()
     plt.savefig(s)
 
 
-outname = os.path.join(common.PLOT_DIR, "3-skewed-a.png")
-draw(data[:2], outname, "inputs sampled from $\\mathrm{{Uniform}}[0.6,0.7]$")
+outname = os.path.join(common.PLOT_DIR, "ex2-skewed-a.png")
+draw(data[0::2], outname, "$\\mathrm{{Uniform}}[0.6,0.7]$")
 print(f"Saved at {outname}")
 
-outname = os.path.join(common.PLOT_DIR, "3-skewed-b.png")
-draw(data[2:], outname,
-     "inputs sampled from $\\mathrm{{Uniform}}[128.6,128.7]$")
+outname = os.path.join(common.PLOT_DIR, "ex2-skewed-b.png")
+draw(data[1::2], outname,
+     "$\\mathrm{{Uniform}}[128.6,128.7]$")
 print(f"Saved at {outname}")

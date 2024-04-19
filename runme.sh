@@ -20,7 +20,7 @@ echo "*          Section 5.3.2  batch query (a)          *"
 echo "*                                                  *"
 echo "****************************************************"
 make exec DOCKER_CMD='eval/2-batched-a.py'
-echo "=============  Plotting Figure 11 (a)  ============="
+echo "=============  Plotting Figure 9 (a)  ============="
 make exec DOCKER_CMD='eval/plot-2-batched-a.py'
 
 echo -e "\n"

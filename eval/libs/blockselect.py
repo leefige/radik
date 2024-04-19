@@ -3,13 +3,16 @@ import os
 import re
 
 import libs.common as common
+from libs.common import Distribution
 
 
-def run_block_select(BATCH: int, N: int, K: int) -> float:
+def run_block_select(BATCH: int, N: int, K: int,
+              distribution: Distribution = Distribution.U_0_1) -> float:
     if K > 2048:
         return math.nan
 
-    cmd = f"{common.BLOCKSELECT_BIN} {BATCH} {N} {K}"
+    arg_distribution = distribution.value
+    cmd = f"{common.BLOCKSELECT_BIN} {BATCH} {N} {K} {arg_distribution}"
     elapsed: float = None
 
     with os.popen(cmd, 'r') as fout:
