@@ -4,10 +4,11 @@
 #include <algorithm>
 #include <iostream>
 #include <thread>
+#include <curand.h>
+
 #include "../PQ/topK_PQ.h"
 #include "zipf.hpp"
-
-#include <curand.h>
+#include "error_check.hpp"
 
 // #define CORRECTNESS_CHECK
 
@@ -45,27 +46,27 @@ void profWarpSelect(const int BATCHSIZE,
 
     // prepare data GPU
     ValType *valIn_dev = 0;
-    cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N);
+    CHECK_CUDA(cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N));
 
     std::vector<ValType> valIn(TOTALLEN);
     if (DISTRIBUTION_TYPE == 0) {
         // using U[0, 1]
         curandGenerator_t gen;
-        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-        curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
-        curandGenerateUniform(gen, valIn_dev, TOTALLEN);
+        CHECK_CURAND(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT));
+        CHECK_CURAND(curandSetPseudoRandomGeneratorSeed(gen, 1234ULL));
+        CHECK_CURAND(curandGenerateUniform(gen, valIn_dev, TOTALLEN));
 #ifdef CORRECTNESS_CHECK
-        cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
+        CHECK_CUDA(cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost));
 #endif
-        curandDestroyGenerator(gen);
+        CHECK_CURAND(curandDestroyGenerator(gen));
     } else if (DISTRIBUTION_TYPE == 1) {
         // using U[0.6, 0.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 0.6, 0.7);
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 2) {
         // using U[128.6, 128.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 128.6, 128.7);
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 3) {
         std::vector<std::thread> thds;
         // using Zipf(N, 1.1)
@@ -77,10 +78,10 @@ void profWarpSelect(const int BATCHSIZE,
         for (auto& t: thds) {
             t.join();
         }
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 4) {
         // all zero
-        cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN);
+        CHECK_CUDA(cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN));
     } else {
         throw std::runtime_error("Bad distributiion");
     }
@@ -88,15 +89,15 @@ void profWarpSelect(const int BATCHSIZE,
     // cudaMemcpy(valIn_dev, dataIn.data(), sizeof(ValType) * BATCHSIZE * N, cudaMemcpyHostToDevice);
     IdxType *idxIn_dev = 0;
     ValType *valOut_dev = 0;
-    cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K));
     IdxType *idxOut_dev = 0;
-    cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K));
 
     float time = 0.;
     cudaEvent_t start, end;
-    cudaEventCreate(&start);
-    cudaEventCreate(&end);
-    cudaEventRecord(start, 0);
+    CHECK_CUDA(cudaEventCreate(&start));
+    CHECK_CUDA(cudaEventCreate(&end));
+    CHECK_CUDA(cudaEventRecord(start, 0));
     topKPQWarpSelect<IdxType, ValType>(valIn_dev,
                                        idxIn_dev,
                                        valOut_dev,
@@ -106,14 +107,14 @@ void profWarpSelect(const int BATCHSIZE,
                                        N,
                                        LARGEST,
                                        0);
-    cudaEventRecord(end, 0);
-    cudaEventSynchronize(end);
-    cudaEventElapsedTime(&time, start, end);
+    CHECK_CUDA(cudaEventRecord(end, 0));
+    CHECK_CUDA(cudaEventSynchronize(end));
+    CHECK_CUDA(cudaEventElapsedTime(&time, start, end));
     printf("elapsed: %f ms\n", time);
 
 #ifdef CORRECTNESS_CHECK
     std::vector<ValType> res(BATCHSIZE * K);
-    cudaMemcpy(res.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost);
+    CHECK_CUDA(cudaMemcpy(res.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost));
     int offset = LARGEST ? N - K : 0;
     for (int i = 0; i < BATCHSIZE; ++i) {
         std::sort(res.begin() + i * K, res.begin() + (i + 1) * K);
@@ -143,27 +144,27 @@ void profBlockSelect(const int BATCHSIZE,
 
     // prepare data GPU
     ValType *valIn_dev = 0;
-    cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N);
+    CHECK_CUDA(cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N));
 
     std::vector<ValType> valIn(TOTALLEN);
     if (DISTRIBUTION_TYPE == 0) {
         // using U[0, 1]
         curandGenerator_t gen;
-        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-        curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
-        curandGenerateUniform(gen, valIn_dev, TOTALLEN);
+        CHECK_CURAND(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT));
+        CHECK_CURAND(curandSetPseudoRandomGeneratorSeed(gen, 1234ULL));
+        CHECK_CURAND(curandGenerateUniform(gen, valIn_dev, TOTALLEN));
 #ifdef CORRECTNESS_CHECK
-        cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
+        CHECK_CUDA(cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost));
 #endif
-        curandDestroyGenerator(gen);
+        CHECK_CURAND(curandDestroyGenerator(gen));
     } else if (DISTRIBUTION_TYPE == 1) {
         // using U[0.6, 0.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 0.6, 0.7);
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 2) {
         // using U[128.6, 128.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 128.6, 128.7);
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 3) {
         std::vector<std::thread> thds;
         // using Zipf(N, 1.1)
@@ -175,25 +176,25 @@ void profBlockSelect(const int BATCHSIZE,
         for (auto& t: thds) {
             t.join();
         }
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 4) {
         // all zero
-        cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN);
+        CHECK_CUDA(cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN));
     } else {
         throw std::runtime_error("Bad distributiion");
     }
 
     IdxType *idxIn_dev = 0;
     ValType *valOut_dev = 0;
-    cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K));
     IdxType *idxOut_dev = 0;
-    cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K));
 
     float time = 0.;
     cudaEvent_t start, end;
-    cudaEventCreate(&start);
-    cudaEventCreate(&end);
-    cudaEventRecord(start, 0);
+    CHECK_CUDA(cudaEventCreate(&start));
+    CHECK_CUDA(cudaEventCreate(&end));
+    CHECK_CUDA(cudaEventRecord(start, 0));
     topKPQBlockSelect<IdxType, ValType>(valIn_dev,
                                         idxIn_dev,
                                         valOut_dev,
@@ -203,14 +204,14 @@ void profBlockSelect(const int BATCHSIZE,
                                         N,
                                         LARGEST,
                                         0);
-    cudaEventRecord(end, 0);
-    cudaEventSynchronize(end);
-    cudaEventElapsedTime(&time, start, end);
+    CHECK_CUDA(cudaEventRecord(end, 0));
+    CHECK_CUDA(cudaEventSynchronize(end));
+    CHECK_CUDA(cudaEventElapsedTime(&time, start, end));
     printf("elapsed: %f ms\n", time);
 
 #ifdef CORRECTNESS_CHECK
     std::vector<ValType> res(BATCHSIZE * K);
-    cudaMemcpy(res.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost);
+    CHECK_CUDA(cudaMemcpy(res.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost));
     int offset = LARGEST ? N - K : 0;
     for (int i = 0; i < BATCHSIZE; ++i) {
         std::sort(res.begin() + i * K, res.begin() + (i + 1) * K);
@@ -240,27 +241,27 @@ void profGridSelect(const int BATCHSIZE,
 
     // prepare data GPU
     ValType *valIn_dev = 0;
-    cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N);
+    CHECK_CUDA(cudaMalloc(&valIn_dev, sizeof(ValType) * BATCHSIZE * N));
 
     std::vector<ValType> valIn(TOTALLEN);
     if (DISTRIBUTION_TYPE == 0) {
         // using U[0, 1]
         curandGenerator_t gen;
-        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-        curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
-        curandGenerateUniform(gen, valIn_dev, TOTALLEN);
+        CHECK_CURAND(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT));
+        CHECK_CURAND(curandSetPseudoRandomGeneratorSeed(gen, 1234ULL));
+        CHECK_CURAND(curandGenerateUniform(gen, valIn_dev, TOTALLEN));
 #ifdef CORRECTNESS_CHECK
-        cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
+        CHECK_CUDA(cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost));
 #endif
-        curandDestroyGenerator(gen);
+        CHECK_CURAND(curandDestroyGenerator(gen));
     } else if (DISTRIBUTION_TYPE == 1) {
         // using U[0.6, 0.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 0.6, 0.7);
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 2) {
         // using U[128.6, 128.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 128.6, 128.7);
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 3) {
         std::vector<std::thread> thds;
         // using Zipf(N, 1.1)
@@ -272,29 +273,29 @@ void profGridSelect(const int BATCHSIZE,
         for (auto& t: thds) {
             t.join();
         }
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 4) {
         // all zero
-        cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN);
+        CHECK_CUDA(cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN));
     } else {
         throw std::runtime_error("Bad distributiion");
     }
 
     IdxType *idxIn_dev = 0;
     ValType *valOut_dev = 0;
-    cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K));
     IdxType *idxOut_dev = 0;
-    cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K));
     size_t bufferSize = 0;
     getGridSelectWorkSpaceSize<IdxType, ValType>(BATCHSIZE, K, N, &bufferSize);
     void *buffer_dev = 0;
-    cudaMalloc(&buffer_dev, bufferSize);
+    CHECK_CUDA(cudaMalloc(&buffer_dev, bufferSize));
 
     float time = 0.;
     cudaEvent_t start, end;
-    cudaEventCreate(&start);
-    cudaEventCreate(&end);
-    cudaEventRecord(start, 0);
+    CHECK_CUDA(cudaEventCreate(&start));
+    CHECK_CUDA(cudaEventCreate(&end));
+    CHECK_CUDA(cudaEventRecord(start, 0));
     topKPQGridSelect<IdxType, ValType>(valIn_dev,
                                        idxIn_dev,
                                        valOut_dev,
@@ -305,14 +306,14 @@ void profGridSelect(const int BATCHSIZE,
                                        N,
                                        LARGEST,
                                        0);
-    cudaEventRecord(end, 0);
-    cudaEventSynchronize(end);
-    cudaEventElapsedTime(&time, start, end);
+    CHECK_CUDA(cudaEventRecord(end, 0));
+    CHECK_CUDA(cudaEventSynchronize(end));
+    CHECK_CUDA(cudaEventElapsedTime(&time, start, end));
     printf("elapsed: %f ms\n", time);
 
 #ifdef CORRECTNESS_CHECK
     std::vector<ValType> res(BATCHSIZE * K);
-    cudaMemcpy(res.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost);
+    CHECK_CUDA(cudaMemcpy(res.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost));
     int offset = LARGEST ? N - K : 0;
     for (int i = 0; i < BATCHSIZE; ++i) {
         std::sort(res.begin() + i * K, res.begin() + (i + 1) * K);
