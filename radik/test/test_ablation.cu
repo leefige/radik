@@ -9,6 +9,7 @@
 
 #include "../RadixSelect/topk_radixselect.h"
 #include "../ablation/baseline.h"
+#include "error_check.hpp"
 
 // #define CORRECTNESS_CHECK
 
@@ -31,21 +32,21 @@ enum AblationType {
 
 // =========================================================
 
-#define RECORD_START()                  \
-    do {                                \
-        cudaEventCreate(&start);        \
-        cudaEventCreate(&end);          \
-        cudaEventRecord(start, stream); \
+#define RECORD_START()                              \
+    do {                                            \
+        CHECK_CUDA(cudaEventCreate(&start));        \
+        CHECK_CUDA(cudaEventCreate(&end));          \
+        CHECK_CUDA(cudaEventRecord(start, stream)); \
     } while (0)
 
-#define RECORD_END()                            \
-    do {                                        \
-        cudaEventRecord(end, stream);           \
-        cudaEventSynchronize(end);              \
-        cudaEventElapsedTime(&time, start, end);\
-        printf("elapsed: %f ms\n", time);       \
-        cudaEventDestroy(start);                \
-        cudaEventDestroy(end);                  \
+#define RECORD_END()                                        \
+    do {                                                    \
+        CHECK_CUDA(cudaEventRecord(end, stream));           \
+        CHECK_CUDA(cudaEventSynchronize(end));              \
+        CHECK_CUDA(cudaEventElapsedTime(&time, start, end));\
+        printf("elapsed: %f ms\n", time);                   \
+        CHECK_CUDA(cudaEventDestroy(start));                \
+        CHECK_CUDA(cudaEventDestroy(end));                  \
     } while (0)
 
 // Ablation wrapper
@@ -330,32 +331,32 @@ void runAblation(
 
     // prepare data GPU
     ValType *valIn_dev = 0;
-    cudaMalloc(&valIn_dev, sizeof(ValType) * TOTALLEN);
+    CHECK_CUDA(cudaMalloc(&valIn_dev, sizeof(ValType) * TOTALLEN));
     // using U[0, 1]
     curandGenerator_t gen;
-    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-    curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
-    curandGenerateUniform(gen, valIn_dev, TOTALLEN);
+    CHECK_CURAND(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT));
+    CHECK_CURAND(curandSetPseudoRandomGeneratorSeed(gen, 1234ULL));
+    CHECK_CURAND(curandGenerateUniform(gen, valIn_dev, TOTALLEN));
 #ifdef CORRECTNESS_CHECK
-    cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
+    CHECK_CUDA(cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost));
 #endif
-    curandDestroyGenerator(gen);
+    CHECK_CURAND(curandDestroyGenerator(gen));
 
     IdxType *idxIn_dev = 0;
     if (WITHIDXIN) {
-        cudaMalloc(&idxIn_dev, sizeof(IdxType) * TOTALLEN);
-        cudaMemcpy(idxIn_dev, idxIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyHostToDevice);
+        CHECK_CUDA(cudaMalloc(&idxIn_dev, sizeof(IdxType) * TOTALLEN));
+        CHECK_CUDA(cudaMemcpy(idxIn_dev, idxIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyHostToDevice));
     }
     ValType *valOut_dev = 0;
-    cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K));
     IdxType *idxOut_dev = 0;
-    cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K));
     size_t workSpaceSize = 0;
     getRadixSelectLWorkSpaceSize<ValType>(K, MAXLEN, BATCHSIZE, &workSpaceSize);
     void *workSpace = 0;
-    cudaMalloc(&workSpace, workSpaceSize);
+    CHECK_CUDA(cudaMalloc(&workSpace, workSpaceSize));
     cudaStream_t stream0;
-    cudaStreamCreate(&stream0);
+    CHECK_CUDA(cudaStreamCreate(&stream0));
 
     // call wrapper
     switch (ABLATION_TYPE) {
@@ -397,9 +398,9 @@ void runAblation(
 
 #ifdef CORRECTNESS_CHECK
     std::vector<ValType> valOut_host(BATCHSIZE * K);
-    cudaMemcpy(valOut_host.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost);
+    CHECK_CUDA(cudaMemcpy(valOut_host.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost));
     std::vector<IdxType> idxOut_host(BATCHSIZE * K);
-    cudaMemcpy(idxOut_host.data(), idxOut_dev, sizeof(IdxType) * BATCHSIZE * K, cudaMemcpyDeviceToHost);
+    CHECK_CUDA(cudaMemcpy(idxOut_host.data(), idxOut_dev, sizeof(IdxType) * BATCHSIZE * K, cudaMemcpyDeviceToHost));
     std::vector<std::pair<ValType, IdxType>> res_gpu(BATCHSIZE * K);
     for (int i = 0; i < BATCHSIZE * K; ++i) {
         res_gpu[i] = std::make_pair(valOut_host[i], idxOut_host[i]);
@@ -422,14 +423,14 @@ void runAblation(
     }
 #endif
 
-    cudaStreamDestroy(stream0);
-    cudaFree(valIn_dev);
+    CHECK_CUDA(cudaStreamDestroy(stream0));
+    CHECK_CUDA(cudaFree(valIn_dev));
     if (WITHIDXIN) {
-        cudaFree(idxIn_dev);
+        CHECK_CUDA(cudaFree(idxIn_dev));
     }
-    cudaFree(valOut_dev);
-    cudaFree(idxOut_dev);
-    cudaFree(workSpace);
+    CHECK_CUDA(cudaFree(valOut_dev));
+    CHECK_CUDA(cudaFree(idxOut_dev));
+    CHECK_CUDA(cudaFree(workSpace));
 }
 
 // ==================================================================

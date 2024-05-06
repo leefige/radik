@@ -10,6 +10,7 @@
 
 #include "../RadixSelect/topk_radixselect.h"
 #include "zipf.hpp"
+#include "error_check.hpp"
 
 // #define CORRECTNESS_CHECK
 
@@ -84,25 +85,25 @@ void profRadixSelectL(const int BATCHSIZE,
 
     // prepare data GPU
     ValType *valIn_dev = 0;
-    cudaMalloc(&valIn_dev, sizeof(ValType) * TOTALLEN);
+    CHECK_CUDA(cudaMalloc(&valIn_dev, sizeof(ValType) * TOTALLEN));
     if (DISTRIBUTION_TYPE == 0) {
         // using U[0, 1]
         curandGenerator_t gen;
-        curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-        curandSetPseudoRandomGeneratorSeed(gen, 1234ULL);
-        curandGenerateUniform(gen, valIn_dev, TOTALLEN);
+        CHECK_CURAND(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT));
+        CHECK_CURAND(curandSetPseudoRandomGeneratorSeed(gen, 1234ULL));
+        CHECK_CURAND(curandGenerateUniform(gen, valIn_dev, TOTALLEN));
 #ifdef CORRECTNESS_CHECK
-        cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost);
+        CHECK_CUDA(cudaMemcpy(valIn.data(), valIn_dev, sizeof(ValType) * TOTALLEN, cudaMemcpyDeviceToHost));
 #endif
-        curandDestroyGenerator(gen);
+        CHECK_CURAND(curandDestroyGenerator(gen));
     } else if (DISTRIBUTION_TYPE == 1) {
         // using U[0.6, 0.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 0.6, 0.7);
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 2) {
         // using U[128.6, 128.7]
         generate_uniform_val<ValType>(valIn.data(), TOTALLEN, 128.6, 128.7);
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 3) {
         std::vector<std::thread> thds;
         // using Zipf(N, 1.1)
@@ -114,38 +115,38 @@ void profRadixSelectL(const int BATCHSIZE,
         for (auto& t: thds) {
             t.join();
         }
-        cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault);
+        CHECK_CUDA(cudaMemcpy(valIn_dev, valIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyDefault));
     } else if (DISTRIBUTION_TYPE == 4) {
         // all zero
-        cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN);
+        CHECK_CUDA(cudaMemset(valIn_dev, 0, sizeof(ValType) * TOTALLEN));
     } else {
         throw std::runtime_error("Bad distributiion");
     }
 
     IdxType *idxIn_dev = 0;
     if (WITHIDXIN) {
-        cudaMalloc(&idxIn_dev, sizeof(IdxType) * TOTALLEN);
-        cudaMemcpy(idxIn_dev, idxIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyHostToDevice);
+        CHECK_CUDA(cudaMalloc(&idxIn_dev, sizeof(IdxType) * TOTALLEN));
+        CHECK_CUDA(cudaMemcpy(idxIn_dev, idxIn.data(), sizeof(ValType) * TOTALLEN, cudaMemcpyHostToDevice));
     }
     ValType *valOut_dev = 0;
-    cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&valOut_dev, sizeof(ValType) * BATCHSIZE * K));
     IdxType *idxOut_dev = 0;
-    cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K);
+    CHECK_CUDA(cudaMalloc(&idxOut_dev, sizeof(IdxType) * BATCHSIZE * K));
     size_t workSpaceSize = 0;
     getRadixSelectLWorkSpaceSize<ValType>(K, MAXLEN, BATCHSIZE, &workSpaceSize);
     void *workSpace = 0;
-    cudaMalloc(&workSpace, workSpaceSize);
+    CHECK_CUDA(cudaMalloc(&workSpace, workSpaceSize));
     cudaStream_t stream0;
-    cudaStreamCreate(&stream0);
+    CHECK_CUDA(cudaStreamCreate(&stream0));
 
     float time = 0.;
     cudaEvent_t start, end;
-    cudaEventCreate(&start);
-    cudaEventCreate(&end);
+    CHECK_CUDA(cudaEventCreate(&start));
+    CHECK_CUDA(cudaEventCreate(&end));
 
     if (BATCHED) {
         // using batched query
-        cudaEventRecord(start, stream0);
+        CHECK_CUDA(cudaEventRecord(start, stream0));
         topKRadixSelectL<IdxType, LARGEST, ASCEND, WITHSCALE, WITHIDXIN, ValType, PADDING>(
             valIn_dev,
             idxIn_dev,
@@ -157,12 +158,12 @@ void profRadixSelectL(const int BATCHSIZE,
             K,
             stream0,
             SORTING);
-        cudaEventRecord(end, stream0);
-        cudaEventSynchronize(end);
-        cudaEventElapsedTime(&time, start, end);
+        CHECK_CUDA(cudaEventRecord(end, stream0));
+        CHECK_CUDA(cudaEventSynchronize(end));
+        CHECK_CUDA(cudaEventElapsedTime(&time, start, end));
     } else {
         // using a loop over tasks
-        cudaEventRecord(start, stream0);
+        CHECK_CUDA(cudaEventRecord(start, stream0));
         for (int i = 0; i < BATCHSIZE; ++i) {
             topKRadixSelectL<IdxType, LARGEST, ASCEND, WITHSCALE, WITHIDXIN>(
                 valIn_dev + TASKOFFSET[i],
@@ -176,19 +177,19 @@ void profRadixSelectL(const int BATCHSIZE,
                 stream0,
                 SORTING);
         }
-        cudaEventRecord(end, stream0);
-        cudaEventSynchronize(end);
-        cudaEventElapsedTime(&time, start, end);
+        CHECK_CUDA(cudaEventRecord(end, stream0));
+        CHECK_CUDA(cudaEventSynchronize(end));
+        CHECK_CUDA(cudaEventElapsedTime(&time, start, end));
     }
     printf("elapsed: %f ms\n", time);
-    cudaEventDestroy(start);
-    cudaEventDestroy(end);
+    CHECK_CUDA(cudaEventDestroy(start));
+    CHECK_CUDA(cudaEventDestroy(end));
 
 #ifdef CORRECTNESS_CHECK
     std::vector<ValType> valOut_host(BATCHSIZE * K);
-    cudaMemcpy(valOut_host.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost);
+    CHECK_CUDA(cudaMemcpy(valOut_host.data(), valOut_dev, sizeof(ValType) * BATCHSIZE * K, cudaMemcpyDeviceToHost));
     std::vector<IdxType> idxOut_host(BATCHSIZE * K);
-    cudaMemcpy(idxOut_host.data(), idxOut_dev, sizeof(IdxType) * BATCHSIZE * K, cudaMemcpyDeviceToHost);
+    CHECK_CUDA(cudaMemcpy(idxOut_host.data(), idxOut_dev, sizeof(IdxType) * BATCHSIZE * K, cudaMemcpyDeviceToHost));
     std::vector<std::pair<ValType, IdxType>> res_gpu(BATCHSIZE * K);
     for (int i = 0; i < BATCHSIZE * K; ++i) {
         res_gpu[i] = std::make_pair(valOut_host[i], idxOut_host[i]);
@@ -211,14 +212,14 @@ void profRadixSelectL(const int BATCHSIZE,
     }
 #endif
 
-    cudaStreamDestroy(stream0);
-    cudaFree(valIn_dev);
+    CHECK_CUDA(cudaStreamDestroy(stream0));
+    CHECK_CUDA(cudaFree(valIn_dev));
     if (WITHIDXIN) {
-        cudaFree(idxIn_dev);
+        CHECK_CUDA(cudaFree(idxIn_dev));
     }
-    cudaFree(valOut_dev);
-    cudaFree(idxOut_dev);
-    cudaFree(workSpace);
+    CHECK_CUDA(cudaFree(valOut_dev));
+    CHECK_CUDA(cudaFree(idxOut_dev));
+    CHECK_CUDA(cudaFree(workSpace));
 }
 
 int main(int argc, char *argv[]) {
