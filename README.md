@@ -381,7 +381,7 @@ runme_full.sh # script for full evaluation
 
 # Citation
 
-If you find our work helpful, feel free to cite our [paper](https://doi.org/10.1145/3650200.3656596).
+If you find our work helpful, feel free to cite our [paper](https://arxiv.org/abs/2501.14336).
 
 ```bibtex
 @inproceedings{radik2024,
